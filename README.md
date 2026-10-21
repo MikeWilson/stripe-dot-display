@@ -81,7 +81,7 @@ the Durable Object de-dupes on the charge id, so a payment that emits both a
 ### 3. Flash the firmware
 
 **Try demo mode first.** `DEMO_MODE 1` is the default in `config.h`: synthetic
-stats and a fake sale every 14 seconds, with no WiFi and no Stripe. It's the
+stats and a fake sale every 52 seconds, with no WiFi and no Stripe. It's the
 fastest way to confirm the panel, the pin map and the framerate.
 
 ```bash

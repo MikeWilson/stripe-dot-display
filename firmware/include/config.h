@@ -8,7 +8,11 @@
 // seconds. Flash this first on a new board -- it checks the panel, the pin map
 // and the framerate without needing any of the cloud setup.
 #define DEMO_MODE              1
-#define DEMO_PAYMENT_EVERY_MS  14000
+// Long enough to watch a full idle rotation between sales. Keep it well above
+// CARD_DWELL_MS * (number of IDLE_CARDS) + ALERT_HOLD_MS, or the alert eats
+// the rotation and you never see the stats cards the device spends most of
+// its life showing.
+#define DEMO_PAYMENT_EVERY_MS  52000
 
 // --- Credentials ------------------------------------------------------------
 // Real values belong in secrets.h, which is gitignored. Copy
