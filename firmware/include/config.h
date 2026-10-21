@@ -42,18 +42,27 @@
 
 // --- Look -------------------------------------------------------------------
 #define DOT_SPACING      7      // px between dots. 368x448 at 7 -> 52 x 64 cells
-#define DOT_BASE_RADIUS  1.25f  // px radius of a fully-dim dot
-#define DOT_RADIUS_GAIN  1.55f  // extra px radius at full brightness
+// Every dot is the SAME physical size, always. Only brightness changes.
+// Scaling radius with brightness (as the web HeroGrid does) makes unlit dots
+// visibly smaller, which breaks the illusion of a fixed LED lattice -- the
+// whole point of the look. Leave the gain at 0 unless you want the web feel.
+#define DOT_BASE_RADIUS  2.30f  // px radius of every dot
+#define DOT_RADIUS_GAIN  0.00f  // extra px radius at full brightness
 #define AMBIENT_LEVEL    0.17f   // unlit dots stay faintly visible, so the
                                  // lattice reads as a continuous grid
 #define LIT_LEVEL        0.78f  // brightness of lit dots before shimmer
 #define SCREEN_BRIGHTNESS 180   // AMOLED panel brightness, 0-255
 
-// Dots light fast and fade slow, like phosphor. A symmetric lerp makes fast
-// animation (the payment burst) wash out, because a travelling ring only
-// touches each dot for a frame or two.
-#define DOT_ATTACK       0.60f
-#define DOT_DECAY        0.22f
+// LEDs switch, they don't fade. These stay just below instant so a single
+// frame of smoothing kills aliasing on the shimmer, without reading as a
+// cross-fade. (Phosphor-style slow decay was the old, web-ish feel.)
+#define DOT_ATTACK       0.90f
+#define DOT_DECAY        0.60f
+
+// Transitions are a wipe, not a cross-fade: each dot goes dark, then relights
+// with the new frame a moment later, so content is erased and repainted the
+// way a sign repaints. This is the fraction of the wipe a dot spends dark.
+#define WIPE_DARK        0.22f
 
 // Shimmer: ported from the docs-graph HeroGrid dark-mode constants.
 #define SH_PULSE_AMP     0.15f

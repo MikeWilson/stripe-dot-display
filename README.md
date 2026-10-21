@@ -5,10 +5,21 @@ A little desk object that tells you when you get paid.
 A Waveshare 1.8" AMOLED (368×448) on an ESP32-S3 renders the headline numbers
 as a grid of dots — the same technique as the `docs-graph` hero: a uniform
 lattice where each dot's brightness is a base level plus a slow pulse, a
-spatial wave, a twinkle and a rare sparkle, and where the dot's *radius*
-tracks its brightness. Unlit dots stay faintly lit so the lattice always
-reads as a continuous grid. Content is a mask over it, revealed with a
-staggered radial wipe.
+spatial wave, a twinkle and a rare sparkle.
+
+It is tuned to read as a physical LED sign rather than a web effect, which
+comes down to three rules:
+
+- **Every dot is the same size.** The web original scales radius with
+  brightness; on a panel that makes unlit dots visibly smaller and the
+  lattice stops reading as one fixed grid of LEDs.
+- **Unlit dots stay faintly lit** (`AMBIENT_LEVEL`), so the grid is always
+  there and content lights up *within* it.
+- **Transitions wipe, they don't cross-fade.** Each dot goes dark and
+  relights with the new frame a beat later, staggered outward from the
+  middle, so a card is erased and repainted the way a sign repaints. The
+  text layer is masked by the same sweep, so type never pops while the
+  lattice is still wiping.
 
 Small type is deliberately **not** dotted — quantising a 14px label to a 7px
 lattice loses most of its strokes and buys nothing. Labels and captions are

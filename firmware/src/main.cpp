@@ -33,7 +33,9 @@ static Relay   relay;
 // Two frames: what we just composed, and what the grid is currently showing.
 static CellBuf   work;
 static CellBuf   shown;
-static TextLayer text;
+// Text mirrors the dot layers: `text` is this frame's, `shownText` is what the
+// panel is displaying, `prevText` is what the wipe is erasing.
+static TextLayer text, shownText, prevText;
 
 static const CardId kIdle[] = { IDLE_CARDS };
 static const int    kNIdle  = sizeof(kIdle) / sizeof(kIdle[0]);
@@ -54,12 +56,15 @@ static inline bool sameAsShown() {
 static void commit() {
   if (forceWipe) {
     grid.present(work);
+    prevText = shownText;
     forceWipe = false;
   } else if (!sameAsShown()) {
     grid.presentInstant(work);
+    prevText = text;
   } else {
     return;
   }
+  shownText = text;
   memcpy(shown.v, work.v, sizeof(work.v));
   memcpy(shown.c, work.c, sizeof(work.c));
 }
@@ -176,7 +181,7 @@ void loop() {
   uint32_t t1 = micros();
   grid.update(now);
   uint32_t t2 = micros();
-  grid.render(&text);       // dots + crisp text, pushed band by band
+  grid.render(&prevText, &shownText);   // dots + text, pushed band by band
   uint32_t t3 = micros();
   static uint32_t acc[3] = {0}, accN = 0;
   acc[0] += t1 - t0; acc[1] += t2 - t1; acc[2] += t3 - t2;
@@ -189,7 +194,7 @@ void loop() {
 #else
   commit();
   grid.update(now);
-  grid.render(&text);
+  grid.render(&prevText, &shownText);
 #endif
 
   // Health heartbeat: the only way to see framerate and memory headroom once

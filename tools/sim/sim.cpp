@@ -29,7 +29,7 @@ static void simSink(int y0, int h, uint16_t *px) {
       g_fb[(size_t)(y0 + j) * LCD_W + i] = __builtin_bswap16(px[(size_t)j * LCD_W + i]);
 }
 static DotGrid   grid;
-static TextLayer txt;
+static TextLayer txt, prevTxt, shownTxt;
 
 // Settle the brightness/colour lerps so we capture the steady state rather
 // than a mid-fade frame.
@@ -50,7 +50,7 @@ static void checkClipping(const CellBuf &, const std::string &name) {
 }
 
 static void dump(const std::string &dir, const std::string &name) {
-  grid.render(&txt);
+  grid.render(&prevTxt, &shownTxt);
   const uint16_t *fb = g_fb;
   std::vector<uint8_t> rgb((size_t)LCD_W * LCD_H * 3);
   for (int i = 0; i < LCD_W * LCD_H; i++) {
@@ -102,7 +102,7 @@ int main(int argc, char **argv) {
     markText();
     drawCard(buf, txt, (CardId)i, s, i, CARD__N);
     checkClipping(buf, names[i]);
-    grid.presentInstant(buf);
+    grid.presentInstant(buf); prevTxt = txt; shownTxt = txt;
     settle(60);
     dump(dir, names[i]);
   }
@@ -114,7 +114,7 @@ int main(int argc, char **argv) {
   markText();
   drawPayment(buf, txt, e, s);
   checkClipping(buf, "payment");
-  grid.presentInstant(buf); settle(60); dump(dir, "payment");
+  grid.presentInstant(buf); prevTxt = txt; shownTxt = txt; settle(60); dump(dir, "payment");
 
   PaymentEvent big;
   big.cents = 1284950;
@@ -123,7 +123,7 @@ int main(int argc, char **argv) {
   markText();
   drawPayment(buf, txt, big, s);
   checkClipping(buf, "payment-large");
-  grid.presentInstant(buf); settle(60); dump(dir, "payment-large");
+  grid.presentInstant(buf); prevTxt = txt; shownTxt = txt; settle(60); dump(dir, "payment-large");
 
   // Replay the burst at the real frame rate so the phosphor trail is honest.
   {
@@ -132,7 +132,7 @@ int main(int argc, char **argv) {
       float t = (float)f / frames;
       txt.clear();
       drawBurst(buf, t);
-      grid.presentInstant(buf);
+      grid.presentInstant(buf); prevTxt = txt; shownTxt = txt;
       g_ms += 1000 / TARGET_FPS;
       grid.update(g_ms);
       if (f == frames * 15 / 100 || f == frames * 35 / 100 || f == frames * 60 / 100 || f == frames * 85 / 100) {
@@ -145,20 +145,31 @@ int main(int argc, char **argv) {
   markText();
   drawBoot(buf, txt, "SYNCING", 1.4f);
   checkClipping(buf, "boot");
-  grid.presentInstant(buf); settle(60); dump(dir, "boot");
+  grid.presentInstant(buf); prevTxt = txt; shownTxt = txt; settle(60); dump(dir, "boot");
 
   markText();
   drawOffline(buf, txt, 1.0f);
   checkClipping(buf, "offline");
-  grid.presentInstant(buf); settle(60); dump(dir, "offline");
+  grid.presentInstant(buf); prevTxt = txt; shownTxt = txt; settle(60); dump(dir, "offline");
 
-  // Mid-wipe: the staggered radial reveal between two cards.
+  // The wipe, frame by frame: content should be erased by a dark sweep and
+  // repainted behind it, with the text going with the dots rather than popping.
   drawCard(buf, txt, CARD_TODAY, s, 0, CARD__N);
-  grid.presentInstant(buf); settle(60);
+  grid.presentInstant(buf); prevTxt = txt; shownTxt = txt; settle(60);
   drawCard(buf, txt, CARD_BALANCE, s, 2, CARD__N);
+  prevTxt = shownTxt; shownTxt = txt;
   grid.present(buf);
-  settle(10);
-  dump(dir, "wipe");
+  {
+    const int frames = REVEAL_MS * TARGET_FPS / 1000;
+    for (int f = 1; f <= frames; f++) {
+      settle(1);
+      if (f == frames / 5 || f == frames * 2 / 5 ||
+          f == frames * 3 / 5 || f == frames * 4 / 5) {
+        char n[32]; snprintf(n, sizeof(n), "wipe-%d", f * 100 / frames);
+        dump(dir, n);
+      }
+    }
+  }
 
   printf(g_clipped ? "\nFAIL: %d clipped cells\n" : "\nno clipping\n", g_clipped);
   return g_clipped ? 1 : 0;

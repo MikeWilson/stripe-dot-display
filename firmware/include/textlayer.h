@@ -47,5 +47,14 @@ struct TextLayer {
   }
 };
 
-// Rasterise every item that touches rows [y0, y0+h) of `band`.
-void drawTextBand(uint16_t *band, int y0, int h, const TextLayer &tl);
+// Rasterise the text that touches rows [y0, y0+h) of `band`.
+//
+// During a transition the type has to wipe with the dots or the continuity
+// breaks -- lattice erasing while labels pop is exactly the kind of detail
+// that reads as cheap. `onMask` is one byte per grid cell: 0 = this cell is
+// still showing the old frame, 1 = it has flipped to the new one. Each text
+// pixel is attributed to the cell under it and drawn from the matching layer.
+// Pass onMask = nullptr when nothing is in flight and only `cur` is drawn.
+void drawTextBand(uint16_t *band, int y0, int h,
+                  const TextLayer &prev, const TextLayer &cur,
+                  const uint8_t *onMask);

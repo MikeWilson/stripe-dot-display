@@ -77,7 +77,7 @@ class DotGrid {
   void presentInstant(const CellBuf &next);
 
   void update(uint32_t nowMs);   // advance brightness + colour
-  void render(const TextLayer *text = nullptr);   // dots + crisp text -> panel
+  void render(const TextLayer *prev = nullptr, const TextLayer *cur = nullptr);
 
   bool revealing() const { return reveal_ < 1.0f; }
 
@@ -105,6 +105,7 @@ class DotGrid {
   BandSink     sink_  = nullptr;
   uint16_t    *band_  = nullptr;         // internal DMA-capable SRAM
   Dot         *dots_  = nullptr;
+  uint8_t     *onMask_ = nullptr;   // per cell: 1 once it holds the new frame
   uint16_t     ndots_ = 0;
   uint16_t     rowStart_[GRID_H + 1];    // dots_ index where each grid row begins
 

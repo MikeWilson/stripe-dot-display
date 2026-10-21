@@ -1,10 +1,21 @@
 #include "textlayer.h"
 #include "fonts.h"
+#include "dotgrid.h"
 
 // Solid blocky glyphs, big-endian to match the band buffer the dot renderer
 // fills (see DotGrid::render -- the panel is fed raw, so nothing byte-swaps
 // on the way out).
-void drawTextBand(uint16_t *band, int y0, int h, const TextLayer &tl) {
+// Which grid cell sits under a pixel.
+static inline int cellAt(int px, int py) {
+  int gx = (px - GRID_OX + DOT_SPACING / 2) / DOT_SPACING;
+  int gy = (py - GRID_OY + DOT_SPACING / 2) / DOT_SPACING;
+  if (gx < 0) gx = 0; else if (gx >= GRID_W) gx = GRID_W - 1;
+  if (gy < 0) gy = 0; else if (gy >= GRID_H) gy = GRID_H - 1;
+  return gy * GRID_W + gx;
+}
+
+static void drawLayer(uint16_t *band, int y0, int h, const TextLayer &tl,
+                      const uint8_t *onMask, uint8_t want) {
   for (int i = 0; i < tl.n; i++) {
     const TextItem &t = tl.item[i];
     const int gh = 7 * t.scale;
@@ -33,6 +44,7 @@ void drawTextBand(uint16_t *band, int y0, int h, const TextLayer &tl) {
             for (int sx = 0; sx < t.scale; sx++) {
               const int px = x + cx * t.scale + sx;
               if (px < 0 || px >= LCD_W) continue;
+              if (onMask && onMask[cellAt(px, py)] != want) continue;
               row[px] = be;
             }
           }
@@ -41,4 +53,12 @@ void drawTextBand(uint16_t *band, int y0, int h, const TextLayer &tl) {
       x += 6 * t.scale;
     }
   }
+}
+
+void drawTextBand(uint16_t *band, int y0, int h,
+                  const TextLayer &prev, const TextLayer &cur,
+                  const uint8_t *onMask) {
+  if (!onMask) { drawLayer(band, y0, h, cur, nullptr, 1); return; }
+  drawLayer(band, y0, h, prev, onMask, 0);   // cells still on the old frame
+  drawLayer(band, y0, h, cur,  onMask, 1);   // cells that have flipped
 }

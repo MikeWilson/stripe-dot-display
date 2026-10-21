@@ -200,6 +200,9 @@ bool DotGrid::begin(BandSink sink) {
   if (!dots_) dots_ = (Dot *)malloc(sizeof(Dot) * NCELLS);
   if (!dots_) return false;
 
+  onMask_ = (uint8_t *)calloc(NCELLS, 1);
+  if (!onMask_) return false;
+
   // Reveal order is a radial sweep from the middle of the panel, which still
   // reads well on a rectangle -- it just reaches the corners last.
   const float cx = LCD_W / 2.0f, cy = LCD_H / 2.0f;
@@ -267,9 +270,17 @@ void DotGrid::update(uint32_t now) {
 
   for (uint16_t i = 0; i < ndots_; i++) {
     Dot &d = dots_[i];
-    bool shown = reveal_ >= d.noise;
-    uint8_t tv = shown ? curV_[d.idx] : prvV_[d.idx];
-    uint8_t ts = shown ? curC_[d.idx] : prvC_[d.idx];
+
+    // Three-phase wipe: hold the old frame, go dark, come back with the new
+    // one. d.noise staggers when each dot's turn comes, so the dark band
+    // sweeps outward instead of the whole screen blinking at once.
+    const float offAt = d.noise * (1.0f - WIPE_DARK);
+    const float onAt  = offAt + WIPE_DARK;
+    uint8_t tv, ts;
+    if (reveal_ < offAt)     { tv = prvV_[d.idx]; ts = prvC_[d.idx]; }
+    else if (reveal_ < onAt) { tv = 0;            ts = SLOT_AMBIENT; }  // dark
+    else                     { tv = curV_[d.idx]; ts = curC_[d.idx]; }
+    onMask_[d.idx] = (reveal_ >= onAt) ? 1 : 0;
 
     float target;
     if (tv == 0) {
@@ -307,7 +318,7 @@ static inline void putPx(uint16_t *p, int r, int g, int b) {
   *p = (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
 }
 
-void DotGrid::render(const TextLayer *text) {
+void DotGrid::render(const TextLayer *prev, const TextLayer *cur) {
 #if PROFILE_FRAME
   tDraw = tPush = 0;
 #endif
@@ -352,7 +363,8 @@ void DotGrid::render(const TextLayer *text) {
         }
       }
     }
-    if (text) drawTextBand(band_, y0, h, *text);
+    if (cur) drawTextBand(band_, y0, h, prev ? *prev : *cur, *cur,
+                          revealing() ? onMask_ : nullptr);
 #if PROFILE_FRAME
     uint32_t tc = micros();
     tDraw += tc - tb;
