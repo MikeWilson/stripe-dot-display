@@ -15,11 +15,11 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: pip install pillow
+      # Use the same script contributors run. An earlier version duplicated
+      # the compile command here and drifted the moment a source file was
+      # added, failing CI for a reason that had nothing to do with the change.
       - name: Build renderer
-        run: |
-          g++ -std=c++17 -O2 -DDOTGRID_CHECK_CLIP=1 -o tools/sim/sim \
-            -I tools/sim/shim -I firmware/include \
-            tools/sim/sim.cpp firmware/src/{dotgrid,cards,fonts,state}.cpp
+        run: bash tools/sim/build.sh
       - name: Render every screen, fail on clipped text
         run: |
           mkdir -p out
