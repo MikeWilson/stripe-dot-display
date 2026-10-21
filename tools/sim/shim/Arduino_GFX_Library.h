@@ -2,7 +2,7 @@
 #pragma once
 #include "Arduino.h"
 
-#define BLACK 0x0000
+#define RGB565_BLACK 0x0000
 
 class Arduino_Canvas {
  public:

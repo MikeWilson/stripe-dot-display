@@ -75,7 +75,7 @@ void setup() {
     while (true) delay(1000);
   }
   panel->setBrightness(SCREEN_BRIGHTNESS);
-  canvas->fillScreen(BLACK);
+  canvas->fillScreen(RGB565_BLACK);
   canvas->flush();
 
   if (!grid.begin(canvas)) {

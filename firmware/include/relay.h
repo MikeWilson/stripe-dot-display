@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include "state.h"
 
