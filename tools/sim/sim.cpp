@@ -28,7 +28,8 @@ static void simSink(int y0, int h, uint16_t *px) {
     for (int i = 0; i < LCD_W; i++)
       g_fb[(size_t)(y0 + j) * LCD_W + i] = __builtin_bswap16(px[(size_t)j * LCD_W + i]);
 }
-static DotGrid grid;
+static DotGrid   grid;
+static TextLayer txt;
 
 // Settle the brightness/colour lerps so we capture the steady state rather
 // than a mid-fade frame.
@@ -49,7 +50,7 @@ static void checkClipping(const CellBuf &, const std::string &name) {
 }
 
 static void dump(const std::string &dir, const std::string &name) {
-  grid.render();
+  grid.render(&txt);
   const uint16_t *fb = g_fb;
   std::vector<uint8_t> rgb((size_t)LCD_W * LCD_H * 3);
   for (int i = 0; i < LCD_W * LCD_H; i++) {
@@ -68,8 +69,14 @@ static void dump(const std::string &dir, const std::string &name) {
 int main(int argc, char **argv) {
   std::string dir = argc > 1 ? argv[1] : ".";
   srand(7);
+  { // png.py needs the panel size; it is no longer a fixed square.
+    FILE *m = fopen((dir + "/size.txt").c_str(), "w");
+    fprintf(m, "%d %d\n", LCD_W, LCD_H);
+    fclose(m);
+  }
   if (!grid.begin(simSink)) { fprintf(stderr, "grid alloc failed\n"); return 1; }
-  printf("grid %dx%d (%d cells), %dpx pitch\n", GRID_N, GRID_N, NCELLS, DOT_SPACING);
+  printf("panel %dx%d, grid %dx%d (%d cells), %dpx pitch\n",
+         LCD_W, LCD_H, GRID_W, GRID_H, NCELLS, DOT_SPACING);
 
   Stats s;
   s.valid          = true;
@@ -93,7 +100,7 @@ int main(int argc, char **argv) {
 
   for (int i = 0; i < CARD__N; i++) {
     markText();
-    drawCard(buf, (CardId)i, s, i, CARD__N);
+    drawCard(buf, txt, (CardId)i, s, i, CARD__N);
     checkClipping(buf, names[i]);
     grid.presentInstant(buf);
     settle(60);
@@ -105,7 +112,7 @@ int main(int argc, char **argv) {
   snprintf(e.who,  sizeof(e.who),  "mike@example.com");
   snprintf(e.what, sizeof(e.what), "VISA 4242");
   markText();
-  drawPayment(buf, e, s);
+  drawPayment(buf, txt, e, s);
   checkClipping(buf, "payment");
   grid.presentInstant(buf); settle(60); dump(dir, "payment");
 
@@ -114,7 +121,7 @@ int main(int argc, char **argv) {
   snprintf(big.who,  sizeof(big.who),  "acme-corp@example.com");
   snprintf(big.what, sizeof(big.what), "ANNUAL PLAN");
   markText();
-  drawPayment(buf, big, s);
+  drawPayment(buf, txt, big, s);
   checkClipping(buf, "payment-large");
   grid.presentInstant(buf); settle(60); dump(dir, "payment-large");
 
@@ -123,6 +130,7 @@ int main(int argc, char **argv) {
     const int frames = ALERT_BURST_MS * TARGET_FPS / 1000;
     for (int f = 0; f <= frames; f++) {
       float t = (float)f / frames;
+      txt.clear();
       drawBurst(buf, t);
       grid.presentInstant(buf);
       g_ms += 1000 / TARGET_FPS;
@@ -135,19 +143,19 @@ int main(int argc, char **argv) {
   }
 
   markText();
-  drawBoot(buf, "SYNCING", 1.4f);
+  drawBoot(buf, txt, "SYNCING", 1.4f);
   checkClipping(buf, "boot");
   grid.presentInstant(buf); settle(60); dump(dir, "boot");
 
   markText();
-  drawOffline(buf, 1.0f);
+  drawOffline(buf, txt, 1.0f);
   checkClipping(buf, "offline");
   grid.presentInstant(buf); settle(60); dump(dir, "offline");
 
   // Mid-wipe: the staggered radial reveal between two cards.
-  drawCard(buf, CARD_TODAY, s, 0, CARD__N);
+  drawCard(buf, txt, CARD_TODAY, s, 0, CARD__N);
   grid.presentInstant(buf); settle(60);
-  drawCard(buf, CARD_BALANCE, s, 2, CARD__N);
+  drawCard(buf, txt, CARD_BALANCE, s, 2, CARD__N);
   grid.present(buf);
   settle(10);
   dump(dir, "wipe");

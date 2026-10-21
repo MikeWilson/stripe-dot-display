@@ -18,10 +18,7 @@ static inline float frand() { return (float)xr32() * (1.0f / 4294967296.0f); }
 // Rings and bursts are *supposed* to fly off the edge, so only text is checked.
 int g_textClip = 0;
 static inline void noteGlyphCell(int x, int y) {
-  const float cx = LCD_W / 2.0f, cy = LCD_H / 2.0f, rMax = LCD_W / 2.0f - 2.0f;
-  float px = GRID_ORG + x * DOT_SPACING, py = GRID_ORG + y * DOT_SPACING;
-  if (x < 0 || y < 0 || x >= GRID_N || y >= GRID_N ||
-      sqrtf((px - cx) * (px - cx) + (py - cy) * (py - cy)) > rMax) g_textClip++;
+  if (x < 0 || y < 0 || x >= GRID_W || y >= GRID_H) g_textClip++;
 }
 #else
 #define noteGlyphCell(x, y) ((void)0)
@@ -36,8 +33,8 @@ void CellBuf::clear() {
 }
 
 void CellBuf::plot(int x, int y, uint8_t val, uint8_t slot) {
-  if (x < 0 || y < 0 || x >= GRID_N || y >= GRID_N) return;
-  int i = y * GRID_N + x;
+  if (x < 0 || y < 0 || x >= GRID_W || y >= GRID_H) return;
+  int i = y * GRID_W + x;
   if (val > v[i]) { v[i] = val; c[i] = slot; }   // brightest write wins
 }
 
@@ -52,10 +49,10 @@ void CellBuf::fillRect(int x, int y, int w, int h, uint8_t val, uint8_t slot) {
 }
 
 void CellBuf::ring(float cx, float cy, float r, float thickness, uint8_t val, uint8_t slot) {
-  int lo = clampi((int)floorf(cy - r - thickness), 0, GRID_N - 1);
-  int hi = clampi((int)ceilf (cy + r + thickness), 0, GRID_N - 1);
+  int lo = clampi((int)floorf(cy - r - thickness), 0, GRID_H - 1);
+  int hi = clampi((int)ceilf (cy + r + thickness), 0, GRID_H - 1);
   for (int y = lo; y <= hi; y++) {
-    for (int x = 0; x < GRID_N; x++) {
+    for (int x = 0; x < GRID_W; x++) {
       float d = sqrtf((x - cx) * (x - cx) + (y - cy) * (y - cy));
       float e = fabsf(d - r) / thickness;
       if (e > 1.0f) continue;
@@ -66,8 +63,8 @@ void CellBuf::ring(float cx, float cy, float r, float thickness, uint8_t val, ui
 
 void CellBuf::arc(float cx, float cy, float r, float a0, float a1, float thickness,
                   uint8_t val, uint8_t slot) {
-  for (int y = 0; y < GRID_N; y++) {
-    for (int x = 0; x < GRID_N; x++) {
+  for (int y = 0; y < GRID_H; y++) {
+    for (int x = 0; x < GRID_W; x++) {
       float dx = x - cx, dy = y - cy;
       float d = sqrtf(dx * dx + dy * dy);
       float e = fabsf(d - r) / thickness;
@@ -99,7 +96,7 @@ void CellBuf::micro(int x, int y, const char *s, uint8_t val, uint8_t slot) {
 }
 
 void CellBuf::microCenter(int y, const char *s, uint8_t val, uint8_t slot) {
-  micro((GRID_N - microW(s)) / 2, y, s, val, slot);
+  micro((GRID_W - microW(s)) / 2, y, s, val, slot);
 }
 
 int CellBuf::textW(const char *s) {
@@ -120,7 +117,7 @@ void CellBuf::text(int x, int y, const char *s, uint8_t val, uint8_t slot) {
 }
 
 void CellBuf::textCenter(int y, const char *s, uint8_t val, uint8_t slot) {
-  text((GRID_N - textW(s)) / 2, y, s, val, slot);
+  text((GRID_W - textW(s)) / 2, y, s, val, slot);
 }
 
 int CellBuf::bigW(const char *s) {
@@ -147,7 +144,7 @@ void CellBuf::big(int x, int y, const char *s, uint8_t val, uint8_t slot) {
 }
 
 void CellBuf::bigCenter(int y, const char *s, uint8_t val, uint8_t slot) {
-  big((GRID_N - bigW(s)) / 2, y, s, val, slot);
+  big((GRID_W - bigW(s)) / 2, y, s, val, slot);
 }
 
 void CellBuf::bars(int x, int y, int h, const int32_t *vals, int n, int barw, uint8_t slot) {
@@ -203,22 +200,23 @@ bool DotGrid::begin(BandSink sink) {
   if (!dots_) dots_ = (Dot *)malloc(sizeof(Dot) * NCELLS);
   if (!dots_) return false;
 
+  // Reveal order is a radial sweep from the middle of the panel, which still
+  // reads well on a rectangle -- it just reaches the corners last.
   const float cx = LCD_W / 2.0f, cy = LCD_H / 2.0f;
-  const float rMax = LCD_W / 2.0f - 2.0f;
+  const float rMax = sqrtf(cx * cx + cy * cy);
 
   ndots_ = 0;
-  for (int gy = 0; gy < GRID_N; gy++) {
+  for (int gy = 0; gy < GRID_H; gy++) {
     rowStart_[gy] = ndots_;              // dots are generated row by row
-    for (int gx = 0; gx < GRID_N; gx++) {
-      float px = GRID_ORG + gx * DOT_SPACING;
-      float py = GRID_ORG + gy * DOT_SPACING;
+    for (int gx = 0; gx < GRID_W; gx++) {
+      float px = GRID_OX + gx * DOT_SPACING;
+      float py = GRID_OY + gy * DOT_SPACING;
       float d  = sqrtf((px - cx) * (px - cx) + (py - cy) * (py - cy));
-      if (d > rMax) continue;                       // round panel: clip corners
 
       Dot &dt = dots_[ndots_++];
       dt.px = (int16_t)px;
       dt.py = (int16_t)py;
-      dt.idx = gy * GRID_N + gx;
+      dt.idx = gy * GRID_W + gx;
       dt.bright = AMBIENT_LEVEL;
 
       float phase = frand() * 2 * PI;
@@ -233,7 +231,7 @@ bool DotGrid::begin(BandSink sink) {
       dt.r = a.r; dt.g = a.g; dt.b = a.b;
     }
   }
-  rowStart_[GRID_N] = ndots_;
+  rowStart_[GRID_H] = ndots_;
 
   memset(curV_, 0, sizeof(curV_)); memset(curC_, 0, sizeof(curC_));
   memset(prvV_, 0, sizeof(prvV_)); memset(prvC_, 0, sizeof(prvC_));
@@ -309,7 +307,7 @@ static inline void putPx(uint16_t *p, int r, int g, int b) {
   *p = (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
 }
 
-void DotGrid::render() {
+void DotGrid::render(const TextLayer *text) {
 #if PROFILE_FRAME
   tDraw = tPush = 0;
 #endif
@@ -321,10 +319,10 @@ void DotGrid::render() {
     memset(band_, 0, (size_t)LCD_W * h * sizeof(uint16_t));
 
     // Only the grid rows whose patches reach into this band.
-    int gyLo = (y0 - SPR_R - GRID_ORG) / DOT_SPACING;
-    int gyHi = (y0 + h - 1 + SPR_R - GRID_ORG) / DOT_SPACING;
+    int gyLo = (y0 - SPR_R - GRID_OY) / DOT_SPACING;
+    int gyHi = (y0 + h - 1 + SPR_R - GRID_OY) / DOT_SPACING;
     if (gyLo < 0) gyLo = 0;
-    if (gyHi > GRID_N - 1) gyHi = GRID_N - 1;
+    if (gyHi > GRID_H - 1) gyHi = GRID_H - 1;
 
     for (int gy = gyLo; gy <= gyHi; gy++) {
       for (uint16_t i = rowStart_[gy]; i < rowStart_[gy + 1]; i++) {
@@ -354,6 +352,7 @@ void DotGrid::render() {
         }
       }
     }
+    if (text) drawTextBand(band_, y0, h, *text);
 #if PROFILE_FRAME
     uint32_t tc = micros();
     tDraw += tc - tb;

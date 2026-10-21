@@ -2,14 +2,18 @@
 #include <Arduino.h>
 #include "board.h"
 #include "config.h"
+#include "textlayer.h"
 
 // Receives one finished band of pixels, already in the panel's byte order.
 typedef void (*BandSink)(int y0, int h, uint16_t *pixels);
 
-// Grid geometry derived from DOT_SPACING. 466px / 10px -> 47x47 cells.
-#define GRID_N   (LCD_W / DOT_SPACING + 1)
-#define GRID_ORG ((LCD_W - (GRID_N - 1) * DOT_SPACING) / 2)
-#define NCELLS   (GRID_N * GRID_N)
+// Grid geometry derived from DOT_SPACING. The panel is a rectangle, so width
+// and height are independent; 368x448 at 7px -> 52 x 64 cells.
+#define GRID_W   (LCD_W / DOT_SPACING)
+#define GRID_H   (LCD_H / DOT_SPACING)
+#define GRID_OX  ((LCD_W - (GRID_W - 1) * DOT_SPACING) / 2)
+#define GRID_OY  ((LCD_H - (GRID_H - 1) * DOT_SPACING) / 2)
+#define NCELLS   (GRID_W * GRID_H)
 
 struct RGB { uint8_t r, g, b; };
 
@@ -73,7 +77,7 @@ class DotGrid {
   void presentInstant(const CellBuf &next);
 
   void update(uint32_t nowMs);   // advance brightness + colour
-  void render();                 // blit dots into the canvas framebuffer
+  void render(const TextLayer *text = nullptr);   // dots + crisp text -> panel
 
   bool revealing() const { return reveal_ < 1.0f; }
 
@@ -102,7 +106,7 @@ class DotGrid {
   uint16_t    *band_  = nullptr;         // internal DMA-capable SRAM
   Dot         *dots_  = nullptr;
   uint16_t     ndots_ = 0;
-  uint16_t     rowStart_[GRID_N + 1];    // dots_ index where each grid row begins
+  uint16_t     rowStart_[GRID_H + 1];    // dots_ index where each grid row begins
 
   uint8_t curV_[NCELLS], curC_[NCELLS];
   uint8_t prvV_[NCELLS], prvC_[NCELLS];

@@ -2,11 +2,18 @@
 
 A little desk object that tells you when you get paid.
 
-A Waveshare 1.43" round AMOLED on an ESP32-S3 renders everything as a grid of
-dots — the same technique as the `docs-graph` hero: a uniform lattice where
-each dot's brightness is a base level plus a slow pulse, a spatial wave, a
-twinkle and a rare sparkle, and where the dot's *radius* tracks its brightness.
-Content is a mask over that lattice, revealed with a staggered radial wipe.
+A Waveshare 1.8" AMOLED (368×448) on an ESP32-S3 renders the headline numbers
+as a grid of dots — the same technique as the `docs-graph` hero: a uniform
+lattice where each dot's brightness is a base level plus a slow pulse, a
+spatial wave, a twinkle and a rare sparkle, and where the dot's *radius*
+tracks its brightness. Unlit dots stay faintly lit so the lattice always
+reads as a continuous grid. Content is a mask over it, revealed with a
+staggered radial wipe.
+
+Small type is deliberately **not** dotted — quantising a 14px label to a 7px
+lattice loses most of its strokes and buys nothing. Labels and captions are
+drawn as crisp pixel glyphs composited over the dots, which is also why a
+full email address fits where a dot-rendered one had to be truncated.
 
 When a Stripe payment lands, a shockwave fires out from the centre and the
 amount materialises behind it. The rest of the time it cycles your stats.
@@ -24,7 +31,7 @@ Stripe ──webhook──> Cloudflare Worker ──verify sig──> Durable Ob
                                                    SSE over TLS
                                                            │
                                                            ▼
-                                              ESP32-S3 + 466×466 AMOLED
+                                              ESP32-S3 + 368×448 AMOLED
 ```
 
 The device holds **no Stripe credentials**. It authenticates to the Worker with
@@ -36,10 +43,30 @@ is a few hundred milliseconds.
 
 ## Hardware
 
-- **Waveshare ESP32-S3-Touch-AMOLED-1.43** — 466×466 round AMOLED, SH8601/CO5300
-  over QSPI, 16MB flash / 8MB PSRAM. The square CNC case + battery version is
-  the one this was written for.
+- **Waveshare ESP32-S3-Touch-AMOLED-1.8** — 368×448 AMOLED, CO5300 over QSPI,
+  16MB flash / 8MB PSRAM, AXP2101 PMIC, ES8311 codec, QMI8658 IMU.
 - USB-C cable. That's it — no wiring.
+
+### Identify your board before you flash
+
+Waveshare sells several visually similar S3 AMOLED boards whose pin maps and
+resolutions differ, and whose published wiki tables contradict each other.
+**QSPI is write-only**, so a wrong pin map still lets `begin()` return `true`
+and simply leaves the screen black — you cannot detect it in software.
+
+Fingerprint the unit instead. `pio run -e i2cscan -t upload` sweeps every safe
+GPIO pair for the I²C bus and names what it finds. This board answers:
+
+```
+SDA=15 SCL=14 : 0x15 touch  0x18 ES8311  0x20 TCA9554
+                0x34 AXP2101 (chip id 0x4A)  0x51 PCF85063  0x6B QMI8658 (0x05)
+```
+
+If yours differs, it is a different board — find its `pin_config.h` in
+[github.com/waveshareteam](https://github.com/waveshareteam) and put those
+numbers in `board.h`. `pio run -e pinfinder -t upload` cycles candidate
+configs, one per boot, drawing its number and a border that only closes into a
+clean rectangle when the geometry is right.
 
 ## Setup
 
@@ -144,18 +171,20 @@ bash tools/sim/build.sh
 It renders every screen to PNG and fails the run if any glyph lands where the
 circle has no dot — which is what a too-long label looks like before you've
 flashed anything. Nothing in `docs/screens/` was shot on hardware; they're all
-from this.
+from this. It renders the same code the firmware runs, so a layout change can
+be reviewed before it is flashed.
 
 ## Layout notes
 
-The panel is **round**, so usable width depends on height. `chordAt()` in
-`cards.cpp` computes it, and the type hierarchy is built around the constraint:
+The panel is a 368×448 rectangle; the dot lattice is 52×64 cells at the
+default 7px pitch. Two layers compose each frame — dots for the headline
+numerals, bars and frame, crisp pixel text for everything smaller:
 
 | tier | font | advance | fits at mid-height |
 |---|---|---|---|
-| label | 3×5 micro, caps | 5 cells | ~11 chars |
-| headline | 7×11 display | per-glyph | 6 wide glyphs |
-| value | 5×7 | 6 cells | ~9 chars |
+| label | 5×7 solid, 2× | pixels | ~30 chars |
+| headline | 7×11 dots | per-glyph | 6 wide glyphs |
+| value | 5×7 solid, 3× | pixels | ~20 chars |
 
 Money is formatted to fit rather than truncated: under $100 keeps the cents
 (`$49.99`), under $100k drops them (`$12,849`), above that it goes compact
@@ -163,10 +192,13 @@ Money is formatted to fit rather than truncated: under $100 keeps the cents
 
 ## Troubleshooting
 
-**Black screen.** Waveshare shipped this board with two panel controllers and
-two pin maps. Flip `PANEL_VARIANT` in `firmware/include/board.h`, and if that
-doesn't do it, `PINMAP_VARIANT`. Ground truth is the demo zip for your board
-revision — the pin table is at the top of its display driver.
+**Black screen.** Almost certainly the wrong board. Run the I²C scan above —
+it identifies the unit in about a minute, which is far faster than permuting
+pin maps (ask me how I know). `begin()` returning `true` means nothing here.
+
+**Picture is torn or sheared.** The width is wrong, not the pins. A wrong
+`LCD_W` makes every row start at the wrong byte offset. Check `LCD_W`/`LCD_H`
+and `LCD_COL_OFF1` against your board's `pin_config.h`.
 
 **Screen says OFFLINE.** WiFi. The ESP32-S3 is 2.4GHz only.
 
@@ -179,7 +211,7 @@ dashboard. A 400 there means `STRIPE_WEBHOOK_SECRET` doesn't match the endpoint.
 
 ## Performance
 
-27fps on the 466x466 panel, which is where the 30fps cap and the SPI bus meet.
+27fps on the 368×448 panel, which is where the 30fps cap and the SPI bus meet.
 Getting there took three fixes worth knowing about if you touch the renderer —
 the first build managed 7.4fps:
 

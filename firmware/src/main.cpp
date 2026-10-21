@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <Arduino_GFX_Library.h>
+#include <Wire.h>
 #include "board.h"
 #include "config.h"
 #include "dotgrid.h"
@@ -8,11 +9,7 @@
 #include "state.h"
 #include "demo.h"
 
-#if PANEL_VARIANT == PANEL_CO5300
-  #define PanelDriver Arduino_CO5300
-#else
-  #define PanelDriver Arduino_SH8601
-#endif
+#define PanelDriver Arduino_CO5300
 
 static Arduino_DataBus *bus   = nullptr;
 static PanelDriver     *panel = nullptr;
@@ -34,8 +31,9 @@ static Relay   relay;
 #endif
 
 // Two frames: what we just composed, and what the grid is currently showing.
-static CellBuf work;
-static CellBuf shown;
+static CellBuf   work;
+static CellBuf   shown;
+static TextLayer text;
 
 static const CardId kIdle[] = { IDLE_CARDS };
 static const int    kNIdle  = sizeof(kIdle) / sizeof(kIdle[0]);
@@ -71,18 +69,15 @@ static void enter(Mode m) { mode = m; modeStart = millis(); forceWipe = true; }
 void setup() {
   Serial.begin(115200);
 
-#if PIN_LCD_EN >= 0
-  pinMode(PIN_LCD_EN, OUTPUT);
-  digitalWrite(PIN_LCD_EN, HIGH);
-  delay(20);
-#endif
+  // Bring up the shared I2C bus before the panel, as the vendor examples do.
+  Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
 
   bus = new Arduino_ESP32QSPI(PIN_LCD_CS, PIN_LCD_CLK,
                               PIN_LCD_D0, PIN_LCD_D1, PIN_LCD_D2, PIN_LCD_D3);
   panel = new PanelDriver(bus, PIN_LCD_RST, 0, LCD_W, LCD_H,
-                          LCD_COL_OFFSET, 0, LCD_COL_OFFSET, 0);
+                          LCD_COL_OFF1, LCD_ROW_OFF1, LCD_COL_OFF2, LCD_ROW_OFF2);
   if (!panel->begin(LCD_QSPI_HZ)) {
-    Serial.println("display init failed -- check PANEL_VARIANT / PINMAP_VARIANT in board.h");
+    Serial.println("display init failed");
     while (true) delay(1000);
   }
   panel->setBrightness(SCREEN_BRIGHTNESS);
@@ -92,7 +87,7 @@ void setup() {
     Serial.println("dot grid alloc failed");
     while (true) delay(1000);
   }
-  Serial.printf("grid %dx%d, %d cells\n", GRID_N, GRID_N, NCELLS);
+  Serial.printf("panel %dx%d, grid %dx%d, %d cells\n", LCD_W, LCD_H, GRID_W, GRID_H, NCELLS);
   Serial.printf("cpu %lu MHz, flash %lu MHz, psram %s\n",
                 (unsigned long)getCpuFrequencyMhz(),
                 (unsigned long)(ESP.getFlashChipSpeed() / 1000000),
@@ -158,19 +153,20 @@ void loop() {
   // --- compose -------------------------------------------------------------
   switch (mode) {
     case M_BOOT:
-      drawBoot(work, wifiUp ? "SYNCING" : "WIFI", t);
+      drawBoot(work, text, wifiUp ? "SYNCING" : "WIFI", t);
       break;
     case M_OFFLINE:
-      drawOffline(work, t);
+      drawOffline(work, text, t);
       break;
     case M_BURST:
+      text.clear();
       drawBurst(work, (float)(now - modeStart) / (float)ALERT_BURST_MS);
       break;
     case M_ALERT:
-      drawPayment(work, current, st);
+      drawPayment(work, text, current, st);
       break;
     case M_IDLE:
-      drawCard(work, kIdle[card], st, card, kNIdle);
+      drawCard(work, text, kIdle[card], st, card, kNIdle);
       break;
   }
 
@@ -180,7 +176,7 @@ void loop() {
   uint32_t t1 = micros();
   grid.update(now);
   uint32_t t2 = micros();
-  grid.render();            // renders and pushes bands straight to the panel
+  grid.render(&text);       // dots + crisp text, pushed band by band
   uint32_t t3 = micros();
   static uint32_t acc[3] = {0}, accN = 0;
   acc[0] += t1 - t0; acc[1] += t2 - t1; acc[2] += t3 - t2;
@@ -193,7 +189,7 @@ void loop() {
 #else
   commit();
   grid.update(now);
-  grid.render();
+  grid.render(&text);
 #endif
 
   // Health heartbeat: the only way to see framerate and memory headroom once

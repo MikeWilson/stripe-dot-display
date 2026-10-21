@@ -1,5 +1,6 @@
 #pragma once
 #include "dotgrid.h"
+#include "textlayer.h"
 #include "state.h"
 
 // The set of screens. Reference these from IDLE_CARDS in config.h.
@@ -13,8 +14,11 @@ enum CardId {
   CARD__N
 };
 
-void drawCard   (CellBuf &c, CardId id, const Stats &s, int page, int pages);
-void drawPayment(CellBuf &c, const PaymentEvent &e, const Stats &s);
-void drawBurst  (CellBuf &c, float t);              // t: 0..1
-void drawBoot   (CellBuf &c, const char *line, float t);
-void drawOffline(CellBuf &c, float t);
+// Each card fills two layers: `c` is the dot lattice (headline numerals,
+// bars, frame) and `t` is crisp pixel text (labels and captions, which the
+// lattice would only make harder to read).
+void drawCard   (CellBuf &c, TextLayer &t, CardId id, const Stats &s, int page, int pages);
+void drawPayment(CellBuf &c, TextLayer &t, const PaymentEvent &e, const Stats &s);
+void drawBurst  (CellBuf &c, float tt);             // tt: 0..1, no text
+void drawBoot   (CellBuf &c, TextLayer &t, const char *line, float tt);
+void drawOffline(CellBuf &c, TextLayer &t, float tt);

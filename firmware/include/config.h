@@ -41,10 +41,11 @@
 #endif
 
 // --- Look -------------------------------------------------------------------
-#define DOT_SPACING      8      // px between dots. 6 = fine, 8 = default, 12 = chunky
+#define DOT_SPACING      7      // px between dots. 368x448 at 7 -> 52 x 64 cells
 #define DOT_BASE_RADIUS  1.25f  // px radius of a fully-dim dot
 #define DOT_RADIUS_GAIN  1.55f  // extra px radius at full brightness
-#define AMBIENT_LEVEL    0.085f // brightness of unlit background dots
+#define AMBIENT_LEVEL    0.17f   // unlit dots stay faintly visible, so the
+                                 // lattice reads as a continuous grid
 #define LIT_LEVEL        0.78f  // brightness of lit dots before shimmer
 #define SCREEN_BRIGHTNESS 180   // AMOLED panel brightness, 0-255
 

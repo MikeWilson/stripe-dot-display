@@ -5,5 +5,5 @@ cd "$(dirname "$0")"
 FW=../../firmware
 clang++ -std=c++17 -O2 -DDOTGRID_CHECK_CLIP=1 -o sim \
   -I shim -I "$FW/include" \
-  sim.cpp "$FW/src/dotgrid.cpp" "$FW/src/cards.cpp" "$FW/src/fonts.cpp" "$FW/src/state.cpp"
+  sim.cpp "$FW/src/dotgrid.cpp" "$FW/src/cards.cpp" "$FW/src/fonts.cpp" "$FW/src/state.cpp" "$FW/src/textlayer.cpp"
 echo "built tools/sim/sim"
