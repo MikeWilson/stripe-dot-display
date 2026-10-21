@@ -1,0 +1,13 @@
+# firmware
+firmware/.pio/
+firmware/.vscode/
+
+# relay
+relay/node_modules/
+relay/.wrangler/
+relay/.dev.vars
+
+# simulator
+tools/sim/sim
+tools/sim/*.rgb
+tools/sim/*.png

@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "stripe-dots",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "durable_objects": {
+    "bindings": [{ "name": "HUB", "class_name": "Hub" }]
+  },
+
+  // SQLite-backed DOs are what the Workers free plan supports.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Hub"] }],
+
+  "vars": {
+    // Day boundaries for "today" and the 14-day chart. -8h = US Pacific.
+    "TZ_OFFSET_SECONDS": "-28800",
+    // Listing every subscription is expensive; opt in if you want the MRR card.
+    "ENABLE_MRR": "0"
+  }
+
+  // Secrets (set with `wrangler secret put <NAME>`):
+  //   STRIPE_SECRET_KEY       rk_live_... restricted key, read-only
+  //   STRIPE_WEBHOOK_SECRET   whsec_...   from the webhook endpoint
+  //   DEVICE_TOKEN            any long random string, also goes in config.h
+}
