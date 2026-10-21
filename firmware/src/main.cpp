@@ -96,13 +96,9 @@ void loop() {
   const float  t  = now / 1000.0f;
 
   // --- mode transitions ----------------------------------------------------
-  PaymentEvent pending;
-  bool hasPayment = relay.takePayment(pending);
-
-  if (hasPayment && mode != M_BOOT) {
-    current = pending;
-    enter(M_BURST);
-  }
+  // Don't dequeue while booting: the queue should hold a sale that landed
+  // before the first stats arrived, not drop it on the floor.
+  if (mode != M_BOOT && relay.takePayment(current)) enter(M_BURST);
 
   switch (mode) {
     case M_BOOT:

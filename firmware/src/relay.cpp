@@ -4,7 +4,10 @@
 #include <WiFi.h>
 #include "esp_crt_bundle.h"
 
+// Full Mozilla root bundle baked into the Arduino core -- real certificate
+// validation, no pinning to go stale. Core 3.x wants an explicit length.
 extern const uint8_t rootca_crt_bundle_start[] asm("_binary_x509_crt_bundle_start");
+extern const uint8_t rootca_crt_bundle_end[]   asm("_binary_x509_crt_bundle_end");
 
 #define STREAM_IDLE_TIMEOUT_MS 90000   // relay heartbeats every 20s
 
@@ -12,7 +15,13 @@ void Relay::begin() {
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
   connectWifi();
+#if defined(ESP_ARDUINO_VERSION) && \
+    ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
+  cli_.setCACertBundle(rootca_crt_bundle_start,
+                       (size_t)(rootca_crt_bundle_end - rootca_crt_bundle_start));
+#else
   cli_.setCACertBundle(rootca_crt_bundle_start);
+#endif
   cli_.setTimeout(8);
 }
 
