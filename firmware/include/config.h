@@ -3,14 +3,38 @@
 //  EDIT THIS FILE. Everything you'd want to tweak lives here.
 // ===========================================================================
 
-// --- WiFi ------------------------------------------------------------------
-#define WIFI_SSID        "your-ssid"
-#define WIFI_PASS        "your-password"
+// --- Demo mode --------------------------------------------------------------
+// 1 = no WiFi, no relay, no Stripe: synthetic stats and a fake sale every few
+// seconds. Flash this first on a new board -- it checks the panel, the pin map
+// and the framerate without needing any of the cloud setup.
+#define DEMO_MODE              1
+#define DEMO_PAYMENT_EVERY_MS  14000
 
-// --- Relay (the Cloudflare Worker in ../relay) ------------------------------
-#define RELAY_HOST       "stripe-dots.YOURNAME.workers.dev"
-#define RELAY_PORT       443
-#define DEVICE_TOKEN     "paste-the-DEVICE_TOKEN-secret-here"
+// --- Credentials ------------------------------------------------------------
+// Real values belong in secrets.h, which is gitignored. Copy
+// secrets.example.h to secrets.h and fill it in. Until you do, these
+// placeholders keep the repo building, and DEMO_MODE never reads them.
+#if defined(__has_include)
+  #if __has_include("secrets.h")
+    #include "secrets.h"
+  #endif
+#endif
+
+#ifndef WIFI_SSID
+  #define WIFI_SSID      "your-ssid"
+#endif
+#ifndef WIFI_PASS
+  #define WIFI_PASS      "your-password"
+#endif
+#ifndef RELAY_HOST
+  #define RELAY_HOST     "stripe-dots.YOURNAME.workers.dev"
+#endif
+#ifndef RELAY_PORT
+  #define RELAY_PORT     443
+#endif
+#ifndef DEVICE_TOKEN
+  #define DEVICE_TOKEN   "paste-the-DEVICE_TOKEN-secret-here"
+#endif
 
 // --- Look -------------------------------------------------------------------
 #define DOT_SPACING      8      // px between dots. 6 = fine, 8 = default, 12 = chunky
@@ -62,5 +86,6 @@
 // --- Housekeeping -----------------------------------------------------------
 #define SNAPSHOT_EVERY_MS  60000  // refresh idle stats from the relay
 #define TARGET_FPS         30
+#define PROFILE_FRAME      0      // 1 = log per-stage frame timing over serial
 #define CURRENCY_SYMBOL    "$"
 #define TZ_OFFSET_SECONDS  (-8 * 3600)   // for the clock card + "today"

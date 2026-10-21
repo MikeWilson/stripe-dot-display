@@ -4,7 +4,14 @@
 
 static inline int   clampi(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
 static inline float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
-static inline float frand() { return (float)esp_random() / 4294967295.0f; }
+// xorshift32: the shimmer sparkle needs cheap noise, not cryptographic noise,
+// and esp_random() is a hardware register read in the inner loop.
+static uint32_t rngState = 0x2F6E2B1u;
+static inline uint32_t xr32() {
+  rngState ^= rngState << 13; rngState ^= rngState >> 17; rngState ^= rngState << 5;
+  return rngState;
+}
+static inline float frand() { return (float)xr32() * (1.0f / 4294967296.0f); }
 
 #if DOTGRID_CHECK_CLIP
 // Host-build only: counts glyph cells placed where the round panel has no dot.
@@ -164,16 +171,33 @@ void CellBuf::bars(int x, int y, int h, const int32_t *vals, int n, int barw, ui
 // ===========================================================================
 // DotGrid
 // ===========================================================================
-bool DotGrid::begin(Arduino_Canvas *canvas) {
-  cv_ = canvas;
-  fb_ = canvas->getFramebuffer();
-  if (!fb_) return false;
+void DotGrid::buildSprites() {
+  for (int b = 0; b < SPR_N; b++) {
+    float r = DOT_BASE_RADIUS + DOT_RADIUS_GAIN * (float)b / (SPR_N - 1);
+    for (int dy = -SPR_R; dy <= SPR_R; dy++)
+      for (int dx = -SPR_R; dx <= SPR_R; dx++) {
+        float d = sqrtf((float)(dx * dx + dy * dy));
+        float cov = clampf(r + 0.5f - d, 0.0f, 1.0f);   // 1px AA falloff
+        spr_[b][(dy + SPR_R) * SPR_D + (dx + SPR_R)] = (uint8_t)(cov * 255.0f + 0.5f);
+      }
+  }
+}
+
+bool DotGrid::begin(BandSink sink) {
+  sink_ = sink;
+
+  band_ = (uint16_t *)heap_caps_aligned_alloc(
+      16, (size_t)LCD_W * BAND_H * sizeof(uint16_t),
+      MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+  if (!band_) return false;
 
   pal_[SLOT_AMBIENT] = RGB COL_AMBIENT;
   pal_[SLOT_ACCENT]  = RGB COL_ACCENT;
   pal_[SLOT_MONEY]   = RGB COL_MONEY;
   pal_[SLOT_WARN]    = RGB COL_WARN;
   pal_[SLOT_DIM]     = RGB COL_DIM;
+
+  buildSprites();
 
   dots_ = (Dot *)heap_caps_malloc(sizeof(Dot) * NCELLS, MALLOC_CAP_SPIRAM);
   if (!dots_) dots_ = (Dot *)malloc(sizeof(Dot) * NCELLS);
@@ -184,6 +208,7 @@ bool DotGrid::begin(Arduino_Canvas *canvas) {
 
   ndots_ = 0;
   for (int gy = 0; gy < GRID_N; gy++) {
+    rowStart_[gy] = ndots_;              // dots are generated row by row
     for (int gx = 0; gx < GRID_N; gx++) {
       float px = GRID_ORG + gx * DOT_SPACING;
       float py = GRID_ORG + gy * DOT_SPACING;
@@ -195,7 +220,12 @@ bool DotGrid::begin(Arduino_Canvas *canvas) {
       dt.py = (int16_t)py;
       dt.idx = gy * GRID_N + gx;
       dt.bright = AMBIENT_LEVEL;
-      dt.phase  = frand() * 2 * PI;
+
+      float phase = frand() * 2 * PI;
+      dt.cp2 = cosf(phase * 2.0f);  dt.sp2 = sinf(phase * 2.0f);
+      dt.cp6 = cosf(phase * 6.0f);  dt.sp6 = sinf(phase * 6.0f);
+      float k = px * 0.012f + py * 0.010f;
+      dt.cw  = cosf(k);             dt.sw  = sinf(k);
       // Reveal order: a radial sweep outward with organic grain on top, so
       // transitions read as a wipe rather than a uniform fade.
       dt.noise  = clampf(0.62f * (d / rMax) + 0.38f * frand(), 0.0f, 1.0f);
@@ -203,6 +233,7 @@ bool DotGrid::begin(Arduino_Canvas *canvas) {
       dt.r = a.r; dt.g = a.g; dt.b = a.b;
     }
   }
+  rowStart_[GRID_N] = ndots_;
 
   memset(curV_, 0, sizeof(curV_)); memset(curC_, 0, sizeof(curC_));
   memset(prvV_, 0, sizeof(prvV_)); memset(prvC_, 0, sizeof(prvC_));
@@ -230,7 +261,11 @@ void DotGrid::update(uint32_t now) {
   if (reveal_ < 1.0f)
     reveal_ = clampf((float)(now - revealStart_) / (float)REVEAL_MS, 0.0f, 1.0f);
 
-  const float t = (float)now;
+  // The only trig in the frame: three angles, shared by every dot.
+  const float t  = (float)now;
+  const float aP = t * SH_PULSE_SPEED,   sP = sinf(aP), cP = cosf(aP);
+  const float aW = t * SH_WAVE_SPEED,    sW = sinf(aW), cW = cosf(aW);
+  const float aT = t * SH_TWINKLE_SPEED, sT = sinf(aT), cT = cosf(aT);
 
   for (uint16_t i = 0; i < ndots_; i++) {
     Dot &d = dots_[i];
@@ -245,9 +280,9 @@ void DotGrid::update(uint32_t now) {
       // Shimmer, ported from HeroGrid: slow pulse + spatial wave + twinkle +
       // rare sparkle. Scaled by the cell's own intensity so cards can render
       // soft edges and half-lit chrome.
-      float pulse   = sinf(t * SH_PULSE_SPEED + d.phase * 2.0f) * SH_PULSE_AMP;
-      float wave    = sinf(t * SH_WAVE_SPEED + d.px * 0.012f + d.py * 0.010f) * SH_WAVE_AMP;
-      float twinkle = sinf(t * SH_TWINKLE_SPEED + d.phase * 6.0f) > 0.8f ? SH_TWINKLE_AMP : 0.0f;
+      float pulse   = (sP * d.cp2 + cP * d.sp2) * SH_PULSE_AMP;
+      float wave    = (sW * d.cw  + cW * d.sw ) * SH_WAVE_AMP;
+      float twinkle = (sT * d.cp6 + cT * d.sp6) > 0.8f ? SH_TWINKLE_AMP : 0.0f;
       float sparkle = frand() > SH_SPARKLE_ODDS ? frand() * 0.30f : 0.0f;
       float lit     = LIT_LEVEL + pulse + wave + twinkle + sparkle;
       target = AMBIENT_LEVEL + (lit - AMBIENT_LEVEL) * (tv / 255.0f);
@@ -275,33 +310,57 @@ static inline void putPx(uint16_t *p, int r, int g, int b) {
 }
 
 void DotGrid::render() {
-  memset(fb_, 0, (size_t)LCD_W * LCD_H * sizeof(uint16_t));
+#if PROFILE_FRAME
+  tDraw = tPush = 0;
+#endif
+  for (int y0 = 0; y0 < LCD_H; y0 += BAND_H) {
+#if PROFILE_FRAME
+    uint32_t tb = micros();
+#endif
+    const int h = (y0 + BAND_H > LCD_H) ? (LCD_H - y0) : BAND_H;
+    memset(band_, 0, (size_t)LCD_W * h * sizeof(uint16_t));
 
-  for (uint16_t i = 0; i < ndots_; i++) {
-    const Dot &d = dots_[i];
-    float a = clampf(d.bright, 0.0f, 1.0f);
-    if (a < 0.02f) continue;
+    // Only the grid rows whose patches reach into this band.
+    int gyLo = (y0 - SPR_R - GRID_ORG) / DOT_SPACING;
+    int gyHi = (y0 + h - 1 + SPR_R - GRID_ORG) / DOT_SPACING;
+    if (gyLo < 0) gyLo = 0;
+    if (gyHi > GRID_N - 1) gyHi = GRID_N - 1;
 
-    // Radius tracks brightness -- this is what gives the grid its texture.
-    float rad = DOT_BASE_RADIUS + a * DOT_RADIUS_GAIN;
+    for (int gy = gyLo; gy <= gyHi; gy++) {
+      for (uint16_t i = rowStart_[gy]; i < rowStart_[gy + 1]; i++) {
+        const Dot &d = dots_[i];
+        float a = clampf(d.bright, 0.0f, 1.0f);
 
-    int x0 = clampi((int)floorf(d.px - rad - 0.5f), 0, LCD_W - 1);
-    int x1 = clampi((int)ceilf (d.px + rad + 0.5f), 0, LCD_W - 1);
-    int y0 = clampi((int)floorf(d.py - rad - 0.5f), 0, LCD_H - 1);
-    int y1 = clampi((int)ceilf (d.py + rad + 0.5f), 0, LCD_H - 1);
+        const uint8_t *sp = spr_[(int)(a * (SPR_N - 1) + 0.5f)];
+        const int R8 = (int)(d.r * a), G8 = (int)(d.g * a), B8 = (int)(d.b * a);
 
-    for (int y = y0; y <= y1; y++) {
-      float dy = (y + 0.5f) - d.py;
-      uint16_t *row = fb_ + y * LCD_W;
-      for (int x = x0; x <= x1; x++) {
-        float dx = (x + 0.5f) - d.px;
-        float dist = sqrtf(dx * dx + dy * dy);
-        float cov  = rad + 0.5f - dist;        // 1px anti-aliased falloff
-        if (cov <= 0.0f) continue;
-        if (cov > 1.0f) cov = 1.0f;
-        float f = cov * a;
-        putPx(row + x, (int)(d.r * f), (int)(d.g * f), (int)(d.b * f));
+        const int py = d.py - SPR_R, px = d.px - SPR_R;
+        int dyA = (py < y0) ? (y0 - py) : 0;
+        int dyB = (py + SPR_D > y0 + h) ? (y0 + h - py) : SPR_D;
+        int dxA = (px < 0) ? -px : 0;
+        int dxB = (px + SPR_D > LCD_W) ? (LCD_W - px) : SPR_D;
+
+        for (int dy = dyA; dy < dyB; dy++) {
+          uint16_t      *row  = band_ + (size_t)(py + dy - y0) * LCD_W + px;
+          const uint8_t *srow = sp + dy * SPR_D;
+          for (int dx = dxA; dx < dxB; dx++) {
+            const int cov = srow[dx];
+            if (!cov) continue;   // band was cleared; most of a dim dot's
+                                  // patch is empty, so this skips a lot
+            const int r = (R8 * cov) >> 8, g = (G8 * cov) >> 8, b = (B8 * cov) >> 8;
+            const uint16_t c = (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+            row[dx] = __builtin_bswap16(c);        // panel wants big-endian
+          }
+        }
       }
     }
+#if PROFILE_FRAME
+    uint32_t tc = micros();
+    tDraw += tc - tb;
+#endif
+    sink_(y0, h, band_);
+#if PROFILE_FRAME
+    tPush += micros() - tc;
+#endif
   }
 }

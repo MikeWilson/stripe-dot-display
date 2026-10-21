@@ -80,12 +80,21 @@ the Durable Object de-dupes on the charge id, so a payment that emits both a
 
 ### 3. Flash the firmware
 
-Edit `firmware/include/config.h` — WiFi, your `workers.dev` host, the device
-token — then:
+**Try demo mode first.** `DEMO_MODE 1` is the default in `config.h`: synthetic
+stats and a fake sale every 14 seconds, with no WiFi and no Stripe. It's the
+fastest way to confirm the panel, the pin map and the framerate.
 
 ```bash
 cd firmware
 pio run -t upload && pio device monitor
+```
+
+When that looks right, put your real credentials in `secrets.h` (gitignored)
+and set `DEMO_MODE 0`:
+
+```bash
+cp include/secrets.example.h include/secrets.h
+$EDITOR include/secrets.h
 ```
 
 ### 4. Check it works
@@ -167,6 +176,30 @@ missing a read scope.
 
 **Payments never appear.** Check the webhook's delivery log in the Stripe
 dashboard. A 400 there means `STRIPE_WEBHOOK_SECRET` doesn't match the endpoint.
+
+## Performance
+
+27fps on the 466x466 panel, which is where the 30fps cap and the SPI bus meet.
+Getting there took three fixes worth knowing about if you touch the renderer —
+the first build managed 7.4fps:
+
+| stage | before | after | what changed |
+|---|---|---|---|
+| update | 13.1ms | 4.1ms | per-dot `sinf` replaced by angle addition: `sin(t·k+p)` expands to `sin(t·k)cos(p) + cos(t·k)sin(p)`, and `cos(p)`/`sin(p)` are fixed per dot. Three `sinf` calls per *frame* instead of three per dot. |
+| draw | 65.3ms | 17.3ms | per-pixel `sqrtf` replaced by 32 precomputed 7×7 coverage sprites; transparent pixels skipped. |
+| push | 45.9ms | 12.6ms | the big one. `draw16bitRGBBitmap()` byte-swaps every pixel into a staging buffer — 29ms/frame, more than the SPI transfer itself. Writing bands big-endian up front and pushing them with `writeBytes()` makes it a straight DMA. |
+
+The remaining 12.6ms is close to the theoretical floor for 434KB at 80MHz QSPI
+(10.9ms), so further gains have to come from pushing fewer pixels.
+
+Two things that sound like they'd help and don't: a bigger
+`ESP32QSPI_MAX_PIXELS_AT_ONCE` (46→43ms; transaction count was never the
+problem) and moving the framebuffer out of PSRAM into internal-SRAM bands
+(no change on its own — the swap loop was slow regardless of where it read
+from). Both conclusions came from measuring, and the band structure stayed
+because it's what makes the DMA push possible.
+
+Set `PROFILE_FRAME 1` in `config.h` to get the per-stage numbers over serial.
 
 ## Cost
 

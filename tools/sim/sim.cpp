@@ -6,6 +6,7 @@
 //
 // Writes one raw RGB file per screen; png.py turns them into PNGs.
 #include "dotgrid.h"
+#include "board.h"
 #include "cards.h"
 #include "state.h"
 #include <string>
@@ -13,10 +14,20 @@
 
 static unsigned long g_ms = 0;
 unsigned long millis() { return g_ms; }
+unsigned long micros() { return g_ms * 1000; }
 uint32_t esp_random() { return (uint32_t)rand() << 16 ^ (uint32_t)rand(); }
 void *heap_caps_malloc(size_t n, int) { return malloc(n); }
+void *heap_caps_aligned_alloc(size_t a, size_t n, int) {
+  return aligned_alloc(a, (n + a - 1) / a * a);
+}
 
-static Arduino_Canvas canvas(LCD_W, LCD_H);
+// Stand-in for the panel: reassemble the bands into a full frame we can dump.
+static uint16_t g_fb[LCD_W * LCD_H];
+static void simSink(int y0, int h, uint16_t *px) {
+  for (int j = 0; j < h; j++)
+    for (int i = 0; i < LCD_W; i++)
+      g_fb[(size_t)(y0 + j) * LCD_W + i] = __builtin_bswap16(px[(size_t)j * LCD_W + i]);
+}
 static DotGrid grid;
 
 // Settle the brightness/colour lerps so we capture the steady state rather
@@ -39,7 +50,7 @@ static void checkClipping(const CellBuf &, const std::string &name) {
 
 static void dump(const std::string &dir, const std::string &name) {
   grid.render();
-  const uint16_t *fb = canvas.getFramebuffer();
+  const uint16_t *fb = g_fb;
   std::vector<uint8_t> rgb((size_t)LCD_W * LCD_H * 3);
   for (int i = 0; i < LCD_W * LCD_H; i++) {
     uint16_t p = fb[i];
@@ -57,7 +68,7 @@ static void dump(const std::string &dir, const std::string &name) {
 int main(int argc, char **argv) {
   std::string dir = argc > 1 ? argv[1] : ".";
   srand(7);
-  if (!grid.begin(&canvas)) { fprintf(stderr, "grid alloc failed\n"); return 1; }
+  if (!grid.begin(simSink)) { fprintf(stderr, "grid alloc failed\n"); return 1; }
   printf("grid %dx%d (%d cells), %dpx pitch\n", GRID_N, GRID_N, NCELLS, DOT_SPACING);
 
   Stats s;

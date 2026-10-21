@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # The fast gate: builds the real render path and fails if any glyph lands
+  # outside the round panel.
+  simulator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install pillow
+      - name: Build renderer
+        run: |
+          g++ -std=c++17 -O2 -DDOTGRID_CHECK_CLIP=1 -o tools/sim/sim \
+            -I tools/sim/shim -I firmware/include \
+            tools/sim/sim.cpp firmware/src/{dotgrid,cards,fonts,state}.cpp
+      - name: Render every screen, fail on clipped text
+        run: |
+          mkdir -p out
+          ./tools/sim/sim out
+          python3 tools/sim/png.py out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screens
+          path: out/*.png
+
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ hashFiles('firmware/platformio.ini') }}
+      - run: pip install platformio
+      - run: pio run -d firmware
+
+  relay:
+    runs-on: ubuntu-latest
+    defaults:
+      run: { working-directory: relay }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: npm, cache-dependency-path: relay/package-lock.json }
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx wrangler deploy --dry-run --outdir /tmp/w

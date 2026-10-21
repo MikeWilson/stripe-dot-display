@@ -11,3 +11,9 @@ relay/.dev.vars
 tools/sim/sim
 tools/sim/*.rgb
 tools/sim/*.png
+
+# never commit real credentials
+firmware/include/secrets.h
+
+# local worker secrets
+relay/.dev.vars

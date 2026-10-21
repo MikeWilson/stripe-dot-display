@@ -1,8 +1,10 @@
 #pragma once
 #include <Arduino.h>
-#include <Arduino_GFX_Library.h>
 #include "board.h"
 #include "config.h"
+
+// Receives one finished band of pixels, already in the panel's byte order.
+typedef void (*BandSink)(int y0, int h, uint16_t *pixels);
 
 // Grid geometry derived from DOT_SPACING. 466px / 10px -> 47x47 cells.
 #define GRID_N   (LCD_W / DOT_SPACING + 1)
@@ -57,7 +59,11 @@ struct CellBuf {
 // ---------------------------------------------------------------------------
 class DotGrid {
  public:
-  bool begin(Arduino_Canvas *canvas);
+  // Renders in horizontal bands held in internal SRAM and hands each one to
+  // `sink`. Pixels are written big-endian so the sink can DMA them straight
+  // out: Arduino_GFX's own writePixels() byte-swaps per pixel, which costs
+  // ~29ms/frame at this resolution -- more than the SPI transfer itself.
+  bool begin(BandSink sink);
 
   void setPalette(int slot, RGB c) { pal_[slot] = c; }
 
@@ -71,20 +77,32 @@ class DotGrid {
 
   bool revealing() const { return reveal_ < 1.0f; }
 
+#if PROFILE_FRAME
+  uint32_t tDraw = 0, tPush = 0;   // us accumulated by render(), for profiling
+#endif
+
  private:
   struct Dot {
     int16_t  px, py;      // pixel centre
     uint16_t idx;         // index into CellBuf
     float    bright;
-    float    phase;       // shimmer phase
     float    noise;       // 0..1 reveal order
     float    r, g, b;     // current colour, smoothed
+    // Shimmer is sin(t*speed + k) per dot. Angle addition turns that into
+    // sin(t*speed)*cos(k) + cos(t*speed)*sin(k), and cos(k)/sin(k) are fixed
+    // per dot -- so they're baked here and the per-frame loop does no trig.
+    float    cp2, sp2;    // k = phase*2   (slow pulse)
+    float    cp6, sp6;    // k = phase*6   (twinkle)
+    float    cw,  sw;     // k = x*.012 + y*.010 (spatial wave)
   };
 
-  Arduino_Canvas *cv_   = nullptr;
-  uint16_t       *fb_   = nullptr;
-  Dot            *dots_ = nullptr;
-  uint16_t        ndots_ = 0;
+  static const int BAND_H = 16;          // rows per band; 466*16*2 = 14.9KB
+
+  BandSink     sink_  = nullptr;
+  uint16_t    *band_  = nullptr;         // internal DMA-capable SRAM
+  Dot         *dots_  = nullptr;
+  uint16_t     ndots_ = 0;
+  uint16_t     rowStart_[GRID_N + 1];    // dots_ index where each grid row begins
 
   uint8_t curV_[NCELLS], curC_[NCELLS];
   uint8_t prvV_[NCELLS], prvC_[NCELLS];
@@ -92,4 +110,10 @@ class DotGrid {
   uint32_t revealStart_ = 0;
 
   RGB pal_[NSLOTS];
+
+  // Precomputed anti-aliased dot coverage, one 7x7 patch per brightness step.
+  // Replaces a per-pixel sqrtf in the hot loop.
+  static const int SPR_N = 32, SPR_R = 3, SPR_D = 2 * SPR_R + 1;
+  uint8_t spr_[SPR_N][SPR_D * SPR_D];
+  void buildSprites();
 };
