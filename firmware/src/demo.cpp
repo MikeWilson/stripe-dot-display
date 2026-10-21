@@ -75,6 +75,8 @@ void demoBegin(Stats &s) {
 
 void demoTick(Stats &) {}
 
+void demoTriggerNow() { next_ = millis(); }
+
 bool demoPayment(PaymentEvent &out) {
   if ((int32_t)(millis() - next_) < 0) return false;
   next_ = millis() + DEMO_PAYMENT_EVERY_MS;

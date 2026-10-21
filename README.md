@@ -20,18 +20,24 @@ comes down to three rules:
   middle, so a card is erased and repainted the way a sign repaints. The
   text layer is masked by the same sweep, so type never pops while the
   lattice is still wiping.
+- **The payment banner travels one way and lights what it passes.** Two
+  octaves of value noise give its edge a torn, hand-made line; a clean
+  geometric ripple reads as a screensaver. Nothing is drawn at the panel
+  edge, so the rounded corners are simply empty rather than clipping a frame.
 
 Small type is deliberately **not** dotted — quantising a 14px label to a 7px
 lattice loses most of its strokes and buys nothing. Labels and captions are
 drawn as crisp pixel glyphs composited over the dots, which is also why a
 full email address fits where a dot-rendered one had to be truncated.
 
-When a Stripe payment lands, a shockwave fires out from the centre and the
-amount materialises behind it. The rest of the time it cycles your stats.
+When a Stripe payment lands, a thin ragged banner crosses the panel once and
+leaves the amount lit in its wake. The rest of the time it cycles your stats.
+Tap the glass to fire one on demand -- useful for filming it, and for checking
+the thing works before any webhook exists.
 
 | | | |
 |---|---|---|
-| ![today](docs/screens/today.png) | ![payment](docs/screens/payment.png) | ![burst](docs/screens/burst-57.png) |
+| ![today](docs/screens/today.png) | ![payment](docs/screens/payment.png) | ![sweep](docs/screens/sweep.png) |
 | ![sparkline](docs/screens/sparkline.png) | ![balance](docs/screens/balance.png) | ![payout](docs/screens/payout.png) |
 
 ## How it fits together

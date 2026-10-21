@@ -39,7 +39,7 @@ static void drawLayer(uint16_t *band, int y0, int h, const TextLayer &tl,
           // one glyph pixel -> a scale x scale block
           for (int sy = 0; sy < t.scale; sy++) {
             const int py = t.y + cy * t.scale + sy;
-            if (py < y0 || py >= y0 + h) continue;
+            if (py < y0 || py >= y0 + h || py < t.clipTop || py >= t.clipBot) continue;
             uint16_t *row = band + (size_t)(py - y0) * LCD_W;
             for (int sx = 0; sx < t.scale; sx++) {
               const int px = x + cx * t.scale + sx;

@@ -38,6 +38,12 @@ void CellBuf::plot(int x, int y, uint8_t val, uint8_t slot) {
   if (val > v[i]) { v[i] = val; c[i] = slot; }   // brightest write wins
 }
 
+void CellBuf::set(int x, int y, uint8_t val, uint8_t slot) {
+  if (x < 0 || y < 0 || x >= GRID_W || y >= GRID_H) return;
+  int i = y * GRID_W + x;
+  v[i] = val; c[i] = slot;
+}
+
 void CellBuf::hline(int x, int y, int w, uint8_t val, uint8_t slot) {
   for (int i = 0; i < w; i++) plot(x + i, y, val, slot);
 }

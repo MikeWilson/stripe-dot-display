@@ -31,6 +31,9 @@ struct CellBuf {
 
   void clear();
   void plot(int x, int y, uint8_t val, uint8_t slot = SLOT_ACCENT);
+  // Overwrite rather than max -- needed to clear cells the sweep hasn't
+  // reached yet, which plot() by definition cannot do.
+  void set(int x, int y, uint8_t val, uint8_t slot);
   void hline(int x, int y, int w, uint8_t val, uint8_t slot = SLOT_ACCENT);
   void vline(int x, int y, int h, uint8_t val, uint8_t slot = SLOT_ACCENT);
   void fillRect(int x, int y, int w, int h, uint8_t val, uint8_t slot = SLOT_ACCENT);

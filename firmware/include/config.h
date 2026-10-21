@@ -53,6 +53,10 @@
 #define LIT_LEVEL        0.78f  // brightness of lit dots before shimmer
 #define SCREEN_BRIGHTNESS 180   // AMOLED panel brightness, 0-255
 
+// The glass has rounded corners. Nothing is drawn at the edge any more, so
+// this only tells the simulator how to mask its renders to match the panel.
+#define SCREEN_CORNER_R  46
+
 // LEDs switch, they don't fade. These stay just below instant so a single
 // frame of smoothing kills aliasing on the shimmer, without reading as a
 // cross-fade. (Phosphor-style slow decay was the old, web-ish feel.)
@@ -93,7 +97,7 @@
 
 // --- Payment alert ----------------------------------------------------------
 #define ALERT_HOLD_MS      11000  // how long a payment stays on screen
-#define ALERT_BURST_MS     650    // the expanding ring before the amount lands
+#define ALERT_BURST_MS     950    // the banner sweep that announces a payment
 #define ALERT_MIN_CENTS    0      // ignore payments smaller than this
 #define SHOW_CUSTOMER      1      // show payer email/name under the amount
 

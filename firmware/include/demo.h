@@ -7,3 +7,4 @@
 void demoBegin(Stats &s);
 void demoTick (Stats &s);
 bool demoPayment(PaymentEvent &out);   // true on the frames a fake sale fires
+void demoTriggerNow();                 // bring the next fake sale forward

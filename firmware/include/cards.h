@@ -19,6 +19,10 @@ enum CardId {
 // lattice would only make harder to read).
 void drawCard   (CellBuf &c, TextLayer &t, CardId id, const Stats &s, int page, int pages);
 void drawPayment(CellBuf &c, TextLayer &t, const PaymentEvent &e, const Stats &s);
-void drawBurst  (CellBuf &c, float tt);             // tt: 0..1, no text
+// Payment announcement: a ragged flood of colour sweeps down over the card
+// and drains back up, uncovering it. tt runs 0..1 across ALERT_BURST_MS.
+void drawSweep  (CellBuf &c, TextLayer &t, const PaymentEvent &e,
+                 const Stats &s, float tt);
+int  sweepClipPx(float tt);
 void drawBoot   (CellBuf &c, TextLayer &t, const char *line, float tt);
 void drawOffline(CellBuf &c, TextLayer &t, float tt);

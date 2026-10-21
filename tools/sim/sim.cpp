@@ -125,18 +125,18 @@ int main(int argc, char **argv) {
   checkClipping(buf, "payment-large");
   grid.presentInstant(buf); prevTxt = txt; shownTxt = txt; settle(60); dump(dir, "payment-large");
 
-  // Replay the burst at the real frame rate so the phosphor trail is honest.
+  // Replay the payment sweep at the real frame rate.
   {
     const int frames = ALERT_BURST_MS * TARGET_FPS / 1000;
     for (int f = 0; f <= frames; f++) {
       float t = (float)f / frames;
-      txt.clear();
-      drawBurst(buf, t);
+      drawSweep(buf, txt, e, s, t);
       grid.presentInstant(buf); prevTxt = txt; shownTxt = txt;
       g_ms += 1000 / TARGET_FPS;
       grid.update(g_ms);
-      if (f == frames * 15 / 100 || f == frames * 35 / 100 || f == frames * 60 / 100 || f == frames * 85 / 100) {
-        char n[32]; snprintf(n, sizeof(n), "burst-%02d", (int)(t * 100));
+      if (f == frames * 20 / 100 || f == frames * 42 / 100 ||
+          f == frames * 62 / 100 || f == frames * 82 / 100) {
+        char n[32]; snprintf(n, sizeof(n), "sweep-%02d", (int)(t * 100));
         dump(dir, n);
       }
     }

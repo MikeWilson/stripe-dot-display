@@ -16,6 +16,7 @@
 
 struct TextItem {
   int16_t  x, y;          // top-left, pixels
+  int16_t  clipTop, clipBot;   // only rows in [clipTop, clipBot) are drawn
   uint8_t  scale;         // 5x7 glyph scaled by this (2 -> 10x14 px)
   uint8_t  r, g, b;
   char     s[40];
@@ -37,7 +38,7 @@ struct TextLayer {
   void add(int x, int y, uint8_t scale, uint8_t r, uint8_t g, uint8_t b, const char *s) {
     if (n >= MAX) return;
     TextItem &t = item[n++];
-    t.x = x; t.y = y; t.scale = scale;
+    t.x = x; t.y = y; t.scale = scale; t.clipTop = 0; t.clipBot = LCD_H;
     t.r = r; t.g = g; t.b = b;
     strlcpy(t.s, s, sizeof(t.s));
   }
@@ -45,6 +46,10 @@ struct TextLayer {
   void centre(int y, uint8_t scale, uint8_t r, uint8_t g, uint8_t b, const char *s) {
     add((LCD_W - width(s, scale)) / 2, y, scale, r, g, b, s);
   }
+
+  // The payment sweep travels one way and lights what it passes, so type is
+  // only drawn where the banner has already been.
+  void clipBelow(int y) { for (int i = 0; i < n; i++) item[i].clipBot = y; }
 };
 
 // Rasterise the text that touches rows [y0, y0+h) of `band`.

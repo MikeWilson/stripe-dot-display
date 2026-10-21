@@ -8,6 +8,7 @@
 #include "relay.h"
 #include "state.h"
 #include "demo.h"
+#include "touch.h"
 
 #define PanelDriver Arduino_CO5300
 
@@ -25,6 +26,7 @@ static void pushBand(int y0, int h, uint16_t *px) {
 }
 
 static DotGrid grid;
+static bool    gTouchOk = false;
 static Stats   gStats;
 #if !DEMO_MODE
 static Relay   relay;
@@ -69,13 +71,17 @@ static void commit() {
   memcpy(shown.c, work.c, sizeof(work.c));
 }
 
-static void enter(Mode m) { mode = m; modeStart = millis(); forceWipe = true; }
+static void enter(Mode m, bool wipe = true) {
+  mode = m;
+  modeStart = millis();
+  forceWipe = wipe;
+}
 
 void setup() {
   Serial.begin(115200);
 
   // Bring up the shared I2C bus before the panel, as the vendor examples do.
-  Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
+  Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL, 400000);   // vendor BSP runs this bus at 400kHz
 
   bus = new Arduino_ESP32QSPI(PIN_LCD_CS, PIN_LCD_CLK,
                               PIN_LCD_D0, PIN_LCD_D1, PIN_LCD_D2, PIN_LCD_D3);
@@ -98,6 +104,10 @@ void setup() {
                 (unsigned long)(ESP.getFlashChipSpeed() / 1000000),
                 psramFound() ? "yes" : "no");
 
+  gTouchOk = touchBegin();
+  Serial.printf("touch %s\n", gTouchOk ? "ready -- tap to fire a payment"
+                                        : "NOT FOUND");
+
 #if DEMO_MODE
   demoBegin(gStats);
   Serial.println("DEMO_MODE: no WiFi, synthetic stats, fake sales");
@@ -110,8 +120,13 @@ void setup() {
 void loop() {
   const uint32_t now = millis();
 
+  // Tap the glass: fire a sale in demo mode (good for filming), or skip to
+  // the next card when it's live.
+  const bool tapped = touchTapped();
+
 #if DEMO_MODE
   demoTick(gStats);
+  if (tapped) demoTriggerNow();
   const bool wifiUp = true;
   const bool gotPayment = demoPayment(current);
 #else
@@ -138,7 +153,8 @@ void loop() {
       break;
 
     case M_BURST:
-      if (now - modeStart >= ALERT_BURST_MS) enter(M_ALERT);
+      // The sweep has already revealed the card; wiping again would undo it.
+      if (now - modeStart >= ALERT_BURST_MS) enter(M_ALERT, false);
       break;
 
     case M_ALERT:
@@ -147,7 +163,7 @@ void loop() {
 
     case M_IDLE:
       if (!wifiUp && !st.valid) enter(M_OFFLINE);
-      else if (now - cardStart >= CARD_DWELL_MS) {
+      else if (now - cardStart >= CARD_DWELL_MS || (tapped && !DEMO_MODE)) {
         card = (card + 1) % kNIdle;
         cardStart = now;
         forceWipe = true;
@@ -164,8 +180,8 @@ void loop() {
       drawOffline(work, text, t);
       break;
     case M_BURST:
-      text.clear();
-      drawBurst(work, (float)(now - modeStart) / (float)ALERT_BURST_MS);
+      drawSweep(work, text, current, st,
+                (float)(now - modeStart) / (float)ALERT_BURST_MS);
       break;
     case M_ALERT:
       drawPayment(work, text, current, st);
@@ -203,9 +219,9 @@ void loop() {
   static uint16_t frames = 0;
   frames++;
   if (now - fpsAt >= 5000) {
-    Serial.printf("fps %.1f  mode %d  heap %u  psram %u\n",
+    Serial.printf("fps %.1f  mode %d  heap %u  touch %s\n",
                   frames * 1000.0f / (now - fpsAt), (int)mode,
-                  (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram());
+                  (unsigned)ESP.getFreeHeap(), gTouchOk ? "ok" : "none");
     fpsAt = now;
     frames = 0;
   }

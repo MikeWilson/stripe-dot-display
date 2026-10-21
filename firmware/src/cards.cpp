@@ -45,15 +45,6 @@ static void fitText(char *dst, size_t n, const char *src, int maxc) {
   strlcpy(dst, tmp, n);
 }
 
-// A dim rectangle of dots just inside the edge, so the composition has a
-// frame to sit in. (On the old round panel this was a ring.)
-static void bezel(CellBuf &c, uint8_t val = 55) {
-  c.hline(0, 0,          GRID_W, val, SLOT_DIM);
-  c.hline(0, GRID_H - 1, GRID_W, val, SLOT_DIM);
-  c.vline(0, 0,          GRID_H, val, SLOT_DIM);
-  c.vline(GRID_W - 1, 0, GRID_H, val, SLOT_DIM);
-}
-
 static void pager(CellBuf &c, int page, int pages) {
   if (pages < 2) return;
   int w = pages * 3 - 1;
@@ -79,7 +70,6 @@ static void head(CellBuf &c, TextLayer &t, const char *label,
 void drawCard(CellBuf &c, TextLayer &t, CardId id, const Stats &s, int page, int pages) {
   c.clear();
   t.clear();
-  bezel(c);
   char big[32], sub[40];
   sub[0] = '\0';
 
@@ -152,31 +142,75 @@ void drawCard(CellBuf &c, TextLayer &t, CardId id, const Stats &s, int page, int
 }
 
 // ---------------------------------------------------------------------------
-// The "ka-ching". Three beats inside ALERT_BURST_MS:
-//   1. the whole face lifts for ~100ms, brightest at the centre
-//   2. a full-brightness rim races outward, a dim echo trailing it
-//   3. both leave the panel and the amount wipes in behind them
-// The rim holds 255 the whole way -- fading it as it travels is what made an
-// earlier version read as a vague cloud instead of a shockwave.
-void drawBurst(CellBuf &c, float t) {
-  c.clear();
-  bezel(c, 45);
+// --- organic sweep ----------------------------------------------------------
+// Value noise: a hash per integer step, smoothly interpolated. Two octaves of
+// it give the flood edge an irregular, hand-torn look. A clean geometric
+// ripple reads as a screensaver; a ragged edge reads as something physical
+// happening to the sign.
+static inline float hash1(int n) {
+  n = (n << 13) ^ n;
+  return 1.0f - ((n * (n * n * 15731 + 789221) + 1376312589) & 0x7fffffff)
+                    / 1073741824.0f;                       // -1..1
+}
+static float vnoise(float x) {
+  int i = (int)floorf(x);
+  float f = x - i;
+  f = f * f * (3.0f - 2.0f * f);                           // smoothstep
+  return hash1(i) * (1.0f - f) + hash1(i + 1) * f;
+}
 
-  const float ease = powf(t, 0.70f);
-  // Reach past the corner so the ring fully leaves a rectangular panel.
-  const float rMax = sqrtf((float)(CENX * CENX + CENY * CENY)) + 3.0f;
-  const float r0   = ease * rMax;
+// Where the flood edge sits in this column, in cells.
+static float edgeAt(int x, float level) {
+  return level + 4.2f * vnoise(x * 0.17f + 11.3f)
+               + 1.6f * vnoise(x * 0.63f + 71.9f);
+}
 
-  // A tight, bright core for the first third. An earlier version lifted the
-  // whole face instead, which flattened the contrast the rim needs to read.
-  if (t < 0.35f) {
-    float k = 1.0f - t / 0.35f;
-    c.ring(CENX, CENY, 0.0f, 2.0f + 6.0f * k, 255, SLOT_MONEY);  // filled blob
+// Thickness of the travelling banner, in cells.
+#define SWEEP_BAND 7.0f
+
+// One direction, top to bottom, constant speed. It is a reveal, not a flood:
+// ahead of the banner nothing is lit, behind it the card stays lit. (An
+// earlier version filled the whole panel and then drained back up, which read
+// as two unrelated moves rather than one thing crossing the sign.)
+static float sweepLevel(float t) {
+  const float lo = -SWEEP_BAND - 7.0f, hi = GRID_H + 7.0f;
+  return lo + (hi - lo) * t;
+}
+
+// Rows at or below this pixel have not been reached yet, so type there would
+// appear before the banner uncovered it. Uses the highest the ragged edge can
+// reach in any column, so nothing leaks ahead of the wave.
+int sweepClipPx(float t) {
+  float trailing = sweepLevel(t) - SWEEP_BAND - 6.0f;      // noise headroom
+  int px = (int)(GRID_OY + trailing * DOT_SPACING);
+  return px < 0 ? 0 : (px > LCD_H ? LCD_H : px);
+}
+
+// The payment announcement: a thin, ragged band of colour crosses the panel
+// once and leaves the card lit behind it.
+void drawSweep(CellBuf &c, TextLayer &tl, const PaymentEvent &e,
+               const Stats &s, float t) {
+  drawPayment(c, tl, e, s);                 // the finished card
+  tl.clipBelow(sweepClipPx(t));             // ...revealed only in its wake
+
+  const float level = sweepLevel(t);
+  const uint8_t slot = e.refund ? SLOT_WARN : SLOT_MONEY;
+
+  for (int x = 0; x < GRID_W; x++) {
+    const float edge = edgeAt(x, level);
+    for (int y = 0; y < GRID_H; y++) {
+      const float d = y - edge;             // >0 = the banner hasn't got here
+      if (d > 0.0f) {
+        c.set(x, y, 0, SLOT_AMBIENT);       // unlit until the wave passes
+      } else if (d > -SWEEP_BAND) {
+        // Inside the banner: brightest at the leading lip, falling away to
+        // nothing at the tail so it dissolves into the card it just lit.
+        const float k = 1.0f + d / SWEEP_BAND;
+        c.plot(x, y, (uint8_t)(70.0f + 185.0f * k * k), slot);
+      }
+      // behind the banner: leave the card as drawn
+    }
   }
-
-  const float out = t > 0.75f ? (1.0f - (t - 0.75f) / 0.25f) : 1.0f;
-  if (r0 > 0.5f)        c.ring(CENX, CENY, r0,        4.0f, (uint8_t)(255 * out), SLOT_MONEY);
-  if (r0 - 8.0f > 0.5f) c.ring(CENX, CENY, r0 - 8.0f, 2.0f, (uint8_t)(120 * out), SLOT_MONEY);
 }
 
 // ---------------------------------------------------------------------------
@@ -184,7 +218,6 @@ void drawPayment(CellBuf &c, TextLayer &t, const PaymentEvent &e, const Stats &s
   (void)s;
   c.clear();
   t.clear();
-  bezel(c, 70);
 
   char big[32];
   fmtBigMoney(e.cents, big, sizeof(big));
@@ -211,7 +244,6 @@ void drawPayment(CellBuf &c, TextLayer &t, const PaymentEvent &e, const Stats &s
 void drawBoot(CellBuf &c, TextLayer &tl, const char *line, float t) {
   c.clear();
   tl.clear();
-  bezel(c, 45);
   float a0 = fmodf(t * 2.2f, 2 * PI);                // sweep while connecting
   c.arc(CENX, CENY, CENX - 4.0f, a0, a0 + 1.1f, 1.4f, 230, SLOT_ACCENT);
   TXT(tl, CENY - 2, 3, C_DIM, line);
@@ -220,7 +252,6 @@ void drawBoot(CellBuf &c, TextLayer &tl, const char *line, float t) {
 void drawOffline(CellBuf &c, TextLayer &tl, float t) {
   c.clear();
   tl.clear();
-  bezel(c, 55);
   float pulse = 0.45f + 0.30f * sinf(t * 2.0f);
   TXT(tl, CENY - 7, 3, C_WARN, "OFFLINE");
   TXT(tl, CENY + 2, 2, shade(C_DIM, pulse), "RETRYING");
